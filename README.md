@@ -1,31 +1,32 @@
-# 📋 TaskManager AI
+# 🤖 AI Task Manager — SQL Agent
 
-An AI-powered task management application that lets users **create, view, update, and delete tasks using natural language**.
+An AI-powered task management application that allows users to manage tasks using **natural language**.
 
-Instead of writing SQL queries manually, users can simply ask:
+Instead of manually writing SQL queries, users can simply ask the AI to create, view, update, or delete tasks.
 
-> "Add a task to study DSA"
+> 💬 "Create a task to complete my DSA assignment"
 
-> "Show my pending tasks"
+> 💬 "Show me my pending tasks"
 
-> "Mark task 2 as completed"
+> 💬 "Mark task 3 as completed"
 
-The AI agent understands the request, selects the appropriate SQL tool, interacts with the SQLite database, and returns the result conversationally.
+The application uses a **LangGraph agent powered by Groq** to understand user requests, select the appropriate tool, and interact with a **SQLite database**.
 
 ---
 
 ## ✨ Features
 
-- 🤖 Natural-language task management
-- 📝 Create tasks using conversational commands
-- 📋 Retrieve and view tasks
+- 💬 Natural language task management
+- ➕ Create tasks using conversational commands
+- 📋 View and filter tasks
 - 🔄 Update task status
 - 🗑️ Delete tasks
-- 🧠 Agent-based tool calling
-- 💾 SQLite database integration
-- 💬 Conversational memory with LangGraph
-- 🌐 Interactive Streamlit interface
-- ⚡ Groq-powered LLM inference
+- 🤖 LLM-powered tool calling
+- 🧠 LangGraph agent orchestration
+- 💾 Persistent SQLite database
+- ⚡ Fast LLM inference using Groq
+- 🎨 Interactive Streamlit interface
+- 🔐 Environment-based API key management
 
 ---
 
@@ -33,57 +34,87 @@ The AI agent understands the request, selects the appropriate SQL tool, interact
 
 <p align="center">
 
-<img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white">
+<a href="https://www.python.org/">
+<img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
+</a>
 
-<img src="https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white">
+<a href="https://www.langchain.com/">
+<img src="https://img.shields.io/badge/LangChain-1C3C3C?style=for-the-badge"/>
+</a>
 
-<img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white">
+<a href="https://www.langchain.com/langgraph">
+<img src="https://img.shields.io/badge/LangGraph-1C3C3C?style=for-the-badge"/>
+</a>
 
-<img src="https://img.shields.io/badge/Groq-F55036?style=for-the-badge&logo=groq&logoColor=white">
+<a href="https://groq.com/">
+<img src="https://img.shields.io/badge/Groq-F55036?style=for-the-badge"/>
+</a>
 
-<img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white">
+<a href="https://www.sqlite.org/">
+<img src="https://img.shields.io/badge/SQLite-003B57?style=for-the-badge&logo=sqlite&logoColor=white"/>
+</a>
 
-<img src="https://img.shields.io/badge/SQLAlchemy-D71F00?style=for-the-badge&logo=sqlalchemy&logoColor=white">
+<a href="https://streamlit.io/">
+<img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white"/>
+</a>
 
-<img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white">
-
-<img src="https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge&logo=pydantic&logoColor=white">
+<a href="https://pydantic.dev/">
+<img src="https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge"/>
+</a>
 
 </p>
+
+| Technology | Purpose |
+|------------|---------|
+| 🐍 **Python** | Core programming language |
+| 🦜 **LangChain** | LLM and tool integration |
+| 🧠 **LangGraph** | Agent orchestration and state management |
+| ⚡ **Groq** | Fast LLM inference |
+| 🗄️ **SQLite** | Persistent task database |
+| 🎨 **Streamlit** | Interactive web interface |
+| 🔐 **python-dotenv** | Environment variable management |
+| 📦 **Pydantic** | Data validation and structured data |
 
 ---
 
 ## 🏗️ Architecture
 
 ```text
-                   ┌─────────────────────┐
-                   │       User          │
-                   └──────────┬──────────┘
-                              │
-                              ▼
-                   ┌─────────────────────┐
-                   │     Streamlit UI    │
-                   └──────────┬──────────┘
-                              │
-                              ▼
-                   ┌─────────────────────┐
-                   │    LangChain Agent  │
-                   └──────────┬──────────┘
-                              │
-                              ▼
-                   ┌─────────────────────┐
-                   │ SQL Database Tools  │
-                   └──────────┬──────────┘
-                              │
-                              ▼
-                   ┌─────────────────────┐
-                   │     SQLite DB       │
-                   │                     │
-                   │      tasks          │
-                   └─────────────────────┘
-                              ▲
-                              │
-                   ┌──────────┴──────────┐
-                   │     LangGraph       │
-                   │  Conversation State│
-                   └─────────────────────┘
+                         ┌─────────────────────┐
+                         │        USER         │
+                         │  Natural Language   │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │    STREAMLIT UI     │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   LANGGRAPH AGENT   │
+                         │                     │
+                         │      GROQ LLM       │
+                         │   Tool Selection    │
+                         └──────────┬──────────┘
+                                    │
+                 ┌──────────────────┼──────────────────┐
+                 │                  │                  │
+                 ▼                  ▼                  ▼
+          ┌────────────┐     ┌────────────┐     ┌────────────┐
+          │create_task │     │ get_tasks  │     │update_task │
+          └──────┬─────┘     └──────┬─────┘     └──────┬─────┘
+                 │                  │                  │
+                 └──────────────────┼──────────────────┘
+                                    │
+                              ┌─────▼──────┐
+                              │delete_task │
+                              └─────┬──────┘
+                                    │
+                                    ▼
+                         ┌─────────────────────┐
+                         │   SQLITE DATABASE   │
+                         │     tasks table     │
+                         └─────────────────────┘
+
+
