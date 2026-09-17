@@ -1,385 +1,147 @@
-# ============================================================
-# AI TASK MANAGER
-# LangChain + LangGraph + Groq + SQLite + Streamlit
-# ============================================================
-
 from dotenv import load_dotenv
 load_dotenv()
-
-import sqlite3
+from langchain_groq import ChatGroq
+from langchain_community.utilities import SQLDatabase 
+from langchain_community.agent_toolkits import SQLDatabaseToolkit 
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain.agents import create_agent
 import streamlit as st
 
-from langchain_groq import ChatGroq
-from langchain.tools import tool
-from langchain.agents import create_agent
-from langgraph.checkpoint.memory import InMemorySaver
+db = SQLDatabase.from_uri("sqlite:///my_tasks.db")
+
+db.run("""
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT CHECK(status IN ('pending', 'in_progress', 'completed'))
+        DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+""")
+
+model = ChatGroq(model = "openai/gpt-oss-120b")
+toolkit = SQLDatabaseToolkit(db = db, llm = model)
+tools = toolkit.get_tools()
+system_prompt = """
+You are a task management assistant that interacts with a SQL database containing a 'tasks' table. 
+
+TASK RULES:
+1. Limit SELECT queries to 10 results max with ORDER BY created_at DESC
+2. After CREATE/UPDATE/DELETE, confirm with SELECT query
+3. If the user requests a list of tasks, present the output in a structured table format to ensure a clean and organized display in the browser."
+
+CRUD OPERATIONS:
+    CREATE: INSERT INTO tasks(title, description, status)
+    READ: SELECT * FROM tasks WHERE ... LIMIT 10
+    UPDATE: UPDATE tasks SET status=? WHERE id=? OR title=?
+    DELETE: DELETE FROM tasks WHERE id=? OR title=?
+
+Table schema: id, title, description, status(pending/in_progress/completed), created_at.
+"""
+
+#we made it into a function because streamlit refreshes page after every execution.. it will re run the whole file from line 1, but if it refreshes then the memory outside the function will get refreshed too, which is not good for memory saving also, we dont need to define agent again and again so we used a decorator cachea-resouce that this function will not be refreshed 
+@st.cache_resource
+def get_agent():
+    agent = create_agent(
+        model = model,
+        tools = tools,
+        checkpointer = InMemorySaver(),
+        system_prompt = system_prompt
+    )
+    return agent
+
+agent = get_agent()
 
 
-# ============================================================
-# PAGE CONFIG
-# ============================================================
 
+            
+# ─────────────────────────────────────────────────────────────
+# STREAMLIT UI
+# ─────────────────────────────────────────────────────────────
+
+import streamlit as st
+
+# Page configuration
 st.set_page_config(
     page_title="TaskManager AI",
     page_icon="📋",
     layout="centered"
 )
 
-
-# ============================================================
-# DATABASE
-# ============================================================
-
-DB_PATH = "my_tasks.db"
-
-
-def get_connection():
-    return sqlite3.connect(DB_PATH)
-
-
-# Create table
-conn = get_connection()
-
-conn.execute("""
-CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    description TEXT,
-    status TEXT CHECK(
-        status IN ('pending', 'in_progress', 'completed')
-    ) DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-""")
-
-conn.commit()
-conn.close()
-
-
-# ============================================================
-# SQL TOOLS
-# ============================================================
-
-@tool
-def create_task(title: str, description: str = "") -> str:
-    """
-    Create a new task.
-
-    Use this when the user wants to add or create a task.
-    """
-
-    conn = get_connection()
-
-    cursor = conn.execute(
-        """
-        INSERT INTO tasks (title, description)
-        VALUES (?, ?)
-        """,
-        (title, description)
-    )
-
-    task_id = cursor.lastrowid
-
-    conn.commit()
-    conn.close()
-
-    return f"Task created successfully with ID {task_id}."
-
-
-@tool
-def get_tasks(status: str = "") -> str:
-    """
-    Retrieve tasks from the database.
-
-    status can be:
-    - pending
-    - in_progress
-    - completed
-
-    Leave status empty to retrieve all tasks.
-    """
-
-    conn = get_connection()
-
-    if status:
-        cursor = conn.execute(
-            """
-            SELECT id, title, description, status, created_at
-            FROM tasks
-            WHERE status = ?
-            ORDER BY created_at DESC
-            LIMIT 10
-            """,
-            (status,)
-        )
-    else:
-        cursor = conn.execute(
-            """
-            SELECT id, title, description, status, created_at
-            FROM tasks
-            ORDER BY created_at DESC
-            LIMIT 10
-            """
-        )
-
-    rows = cursor.fetchall()
-
-    conn.close()
-
-    if not rows:
-        return "No tasks found."
-
-    result = []
-
-    for row in rows:
-        result.append(
-            f"ID: {row[0]} | "
-            f"Title: {row[1]} | "
-            f"Description: {row[2]} | "
-            f"Status: {row[3]} | "
-            f"Created: {row[4]}"
-        )
-
-    return "\n".join(result)
-
-
-@tool
-def update_task(
-    task_id: int,
-    status: str
-) -> str:
-    """
-    Update the status of an existing task.
-
-    Allowed statuses:
-    - pending
-    - in_progress
-    - completed
-    """
-
-    if status not in [
-        "pending",
-        "in_progress",
-        "completed"
-    ]:
-        return (
-            "Invalid status. Use pending, "
-            "in_progress, or completed."
-        )
-
-    conn = get_connection()
-
-    cursor = conn.execute(
-        """
-        UPDATE tasks
-        SET status = ?
-        WHERE id = ?
-        """,
-        (status, task_id)
-    )
-
-    conn.commit()
-
-    if cursor.rowcount == 0:
-        conn.close()
-        return f"No task found with ID {task_id}."
-
-    conn.close()
-
-    return f"Task {task_id} updated to {status}."
-
-
-@tool
-def delete_task(task_id: int) -> str:
-    """
-    Delete a task using its ID.
-    """
-
-    conn = get_connection()
-
-    cursor = conn.execute(
-        """
-        DELETE FROM tasks
-        WHERE id = ?
-        """,
-        (task_id,)
-    )
-
-    conn.commit()
-
-    if cursor.rowcount == 0:
-        conn.close()
-        return f"No task found with ID {task_id}."
-
-    conn.close()
-
-    return f"Task {task_id} deleted successfully."
-
-
-# ============================================================
-# MODEL
-# ============================================================
-
-model = ChatGroq(
-    model="openai/gpt-oss-120b",
-    temperature=0,
-    reasoning_effort="low"
-)
-
-
-# ============================================================
-# TOOLS
-# ============================================================
-
-tools = [
-    create_task,
-    get_tasks,
-    update_task,
-    delete_task
-]
-
-
-# ============================================================
-# SYSTEM PROMPT
-# ============================================================
-
-system_prompt = """
-You are TaskManager AI, an assistant that manages a user's tasks.
-
-You have access to four tools:
-
-1. create_task
-   - Creates a new task.
-
-2. get_tasks
-   - Retrieves tasks.
-   - Can filter by status.
-
-3. update_task
-   - Updates a task's status.
-
-4. delete_task
-   - Deletes a task.
-
-TASK STATUS VALUES:
-
-- pending
-- in_progress
-- completed
-
-
-RULES:
-
-1. Use the appropriate tool whenever the user asks you to
-   create, view, update, or delete a task.
-
-2. Never invent task IDs or task information.
-
-3. When the user asks to see tasks, use get_tasks.
-
-4. When the user asks for pending tasks, use:
-   get_tasks(status="pending")
-
-5. When the user asks for completed tasks, use:
-   get_tasks(status="completed")
-
-6. When creating a task, use create_task.
-
-7. When updating a task, use update_task.
-
-8. When deleting a task, use delete_task.
-
-9. After a successful create, update, or delete operation,
-   provide a concise confirmation.
-
-10. Do not repeatedly call the same tool with the same arguments.
-
-11. If a tool returns that a task does not exist, tell the user
-    that the task could not be found.
-
-12. Keep responses concise and friendly.
-
-13. When presenting multiple tasks, format them as a markdown table
-    with these columns:
-
-    ID | Title | Description | Status | Created
-
-14. For normal conversation that does not involve task management,
-    answer normally without using a database tool.
-"""
-
-
-# ============================================================
-# AGENT
-# ============================================================
-
-@st.cache_resource
-def get_agent():
-
-    memory = InMemorySaver()
-
-    agent = create_agent(
-        model=model,
-        tools=tools,
-        checkpointer=memory,
-        system_prompt=system_prompt
-    )
-
-    return agent
-
-
-agent = get_agent()
-
-
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 # CUSTOM CSS
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 
 st.markdown("""
 <style>
 
-.block-container {
-    max-width: 900px;
-    padding-top: 2rem;
-    padding-bottom: 6rem;
-}
+    /* Main container */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 5rem;
+        max-width: 900px;
+    }
 
-.prompt-box {
-    padding: 12px 15px;
-    border-radius: 10px;
-    border: 1px solid rgba(128,128,128,0.25);
-    margin: 7px 0;
-    font-size: 0.9rem;
-}
+   
 
-.sidebar-title {
-    font-size: 1.35rem;
-    font-weight: 700;
-}
+    /* Welcome box */
+    .welcome-box {
+        padding: 25px;
+        border-radius: 15px;
+        border: 1px solid rgba(128,128,128,0.25);
+        margin: 20px 0;
+        text-align: center;
+    }
 
-.sidebar-section {
-    margin-top: 22px;
-    margin-bottom: 8px;
-    font-size: 0.75rem;
-    color: #888;
-    font-weight: 600;
-}
+    .welcome-title {
+        font-size: 1.3rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .welcome-text {
+        color: #888;
+        font-size: 0.95rem;
+    }
+
+    /* Example prompts */
+    .prompt-box {
+        padding: 10px 15px;
+        border-radius: 10px;
+        border: 1px solid rgba(128,128,128,0.2);
+        margin: 5px 0;
+        font-size: 0.9rem;
+    }
+
+    /* Sidebar */
+    .sidebar-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 15px;
+    }
+
+    .sidebar-section {
+        margin-top: 25px;
+        font-size: 0.85rem;
+        color: #888;
+    }
 
 </style>
 """, unsafe_allow_html=True)
 
 
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 # SESSION STATE
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 # SIDEBAR
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 
 with st.sidebar:
 
@@ -388,12 +150,13 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
-    st.caption(
+    st.markdown(
         "Manage your tasks using natural language."
     )
 
     st.divider()
 
+    # New chat button
     if st.button(
         "➕ New Chat",
         use_container_width=True
@@ -407,35 +170,36 @@ with st.sidebar:
     )
 
     st.markdown("""
-    📝 **Create**
+    **Create**
+    
+    > Add a task to study DSA
 
-    `Add a task to study DSA`
+    **View**
+    
+    > Show my pending tasks
 
-    📋 **View**
+    **Update**
+    
+    > Mark task 2 as completed
 
-    `Show my pending tasks`
-
-    🔄 **Update**
-
-    `Mark task 2 as completed`
-
-    🗑️ **Delete**
-
-    `Delete task 3`
+    **Delete**
+    
+    > Delete my completed tasks
     """)
 
     st.divider()
 
-    st.caption(
-        "LangChain • LangGraph • Groq • SQLite"
-    )
+    st.caption("Powered by LangChain + LangGraph + Groq + SQLite")
 
 
-# ============================================================
-# WELCOME / EXAMPLES
-# ============================================================
+
+
+# ─────────────────────────────────────────────────────────────
+# WELCOME SCREEN
+# ─────────────────────────────────────────────────────────────
 
 if not st.session_state.messages:
+
 
     st.markdown("### 💡 Try asking")
 
@@ -443,91 +207,75 @@ if not st.session_state.messages:
 
     with col1:
 
-        st.markdown(
-            """
-            <div class="prompt-box">
-            📝 Add a task to study DSA
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown("""
+        <div class="prompt-box">
+        📝 Add a task to study DSA
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown(
-            """
-            <div class="prompt-box">
-            📋 Show my pending tasks
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown("""
+        <div class="prompt-box">
+        📋 Show my pending tasks
+        </div>
+        """, unsafe_allow_html=True)
 
     with col2:
 
-        st.markdown(
-            """
-            <div class="prompt-box">
-            ✅ Mark task 1 as completed
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown("""
+        <div class="prompt-box">
+        ✅ Mark task 1 as completed
+        </div>
+        """, unsafe_allow_html=True)
 
-        st.markdown(
-            """
-            <div class="prompt-box">
-            🔎 Show all my tasks
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown("""
+        <div class="prompt-box">
+        🔎 Show all my tasks
+        </div>
+        """, unsafe_allow_html=True)
 
 
-# ============================================================
-# DISPLAY CHAT HISTORY
-# ============================================================
+# ─────────────────────────────────────────────────────────────
+# DISPLAY PREVIOUS CHAT
+# ─────────────────────────────────────────────────────────────
 
 for message in st.session_state.messages:
 
     with st.chat_message(
         message["role"],
-        avatar=(
-            "👤"
-            if message["role"] == "user"
-            else "🤖"
-        )
+        avatar="🧑" if message["role"] == "user" else "🤖"
     ):
         st.markdown(message["content"])
 
 
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 # CHAT INPUT
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 
 query = st.chat_input(
     "Ask me to manage your tasks..."
 )
 
 
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 # PROCESS QUERY
-# ============================================================
+# ─────────────────────────────────────────────────────────────
 
 if query:
 
-    # User message
+    # Store user message
     st.session_state.messages.append({
         "role": "user",
         "content": query
     })
 
+    # Display user message
     with st.chat_message(
         "user",
-        avatar="👤"
+        avatar="🧑"
     ):
         st.markdown(query)
 
-
-    # AI message
+    # Generate AI response
     with st.chat_message(
         "assistant",
         avatar="🤖"
@@ -549,8 +297,7 @@ if query:
                     {
                         "configurable": {
                             "thread_id": "1"
-                        },
-                        "recursion_limit": 10
+                        }
                     }
                 )
 
@@ -558,11 +305,11 @@ if query:
 
                 st.markdown(result)
 
+                # Store AI response
                 st.session_state.messages.append({
                     "role": "assistant",
                     "content": result
                 })
-
 
             except Exception as e:
 
@@ -570,4 +317,4 @@ if query:
                     "Something went wrong while processing your request."
                 )
 
-                st.code(str(e))
+                st.caption(str(e))          
