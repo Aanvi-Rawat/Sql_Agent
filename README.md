@@ -58,9 +58,6 @@ The application uses a **LangGraph agent powered by Groq** to understand user re
 <img src="https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white"/>
 </a>
 
-<a href="https://pydantic.dev/">
-<img src="https://img.shields.io/badge/Pydantic-E92063?style=for-the-badge"/>
-</a>
 
 </p>
 
@@ -73,7 +70,7 @@ The application uses a **LangGraph agent powered by Groq** to understand user re
 | 🗄️ **SQLite** | Persistent task database |
 | 🎨 **Streamlit** | Interactive web interface |
 | 🔐 **python-dotenv** | Environment variable management |
-| 📦 **Pydantic** | Data validation and structured data |
+
 
 ---
 
